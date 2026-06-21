@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Advanced</title>
+<style>
+  :root { --line:#000; }
+  html, body { margin:0; padding:0; background:#fff; color:#000; }
+  body { font-family:Arial, Helvetica, sans-serif; padding:18px 16px;
+         max-width:560px; margin:0 auto; -webkit-text-size-adjust:100%; }
+  .head { display:flex; justify-content:space-between; align-items:baseline;
+          border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:16px; }
+  .head h1 { font-size:24px; margin:0; }
+  .head a { font-size:15px; color:#000; }
+  h2 { font-size:17px; margin:18px 0 8px; }
+
+  /* accident logger */
+  .acc { border:2px solid var(--line); border-radius:12px; padding:12px; margin-bottom:18px; }
+  .acc .grid { display:flex; gap:8px; flex-wrap:wrap; }
+  .acc button {
+    flex:1; min-width:130px; height:54px; border:2px solid var(--line); border-radius:10px;
+    background:#fff; font-size:15px; cursor:pointer; display:flex; align-items:center;
+    justify-content:center; gap:6px; touch-action:manipulation;
+  }
+  .acc button:active { background:#eee; }
+
+  /* event list */
+  .ev { border:1px solid #bbb; border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  .ev .top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .ev .who { font-size:17px; font-weight:bold; }
+  .ev .when { font-size:13px; color:#555; }
+  .ev .what { font-size:20px; margin:4px 0 8px; }
+  .ev .what .lbl { font-size:13px; color:#555; vertical-align:middle; margin-left:4px; }
+  .ev .controls { display:flex; gap:8px; align-items:center; }
+  .ev textarea {
+    width:100%; box-sizing:border-box; font-family:inherit; font-size:14px;
+    border:1px solid #bbb; border-radius:8px; padding:6px; resize:vertical; min-height:38px;
+  }
+  .ev .btns { display:flex; gap:8px; margin-top:8px; }
+  .ev button {
+    border:2px solid var(--line); border-radius:8px; background:#fff; cursor:pointer;
+    font-size:14px; padding:8px 12px; touch-action:manipulation;
+  }
+  .ev button.del { border-color:#900; color:#900; }
+  .ev button:active { background:#eee; }
+  .empty { color:#666; font-size:15px; padding:12px 0; }
+  .flash { font-size:13px; color:#060; margin-left:8px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Advanced</h1>
+    <a href="/log">&larr; Back to log</a>
+  </div>
+
+  <div class="acc">
+    <h2 style="margin-top:0;">Log an accident (indoors &#127968;)</h2>
+    <div class="grid">
+      {% for d in dogs %}
+      <button onclick="logAccident('{{ d }}','pee', this)">{{ d|capitalize }} &#128167;&#127968;</button>
+      <button onclick="logAccident('{{ d }}','poop', this)">{{ d|capitalize }} &#128169;&#127968;</button>
+      {% endfor %}
+    </div>
+    <div style="font-size:12px;color:#666;margin-top:8px;">
+      For vomit, diarrhea, or anything unusual: log the closest event above (or on the main page),
+      then add a note to it below.
+    </div>
+  </div>
+
+  <div class="acc">
+    <h2 style="margin-top:0;">Log at a specific time</h2>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <label style="font-size:14px;">Dog
+        <select id="bt-dog" style="width:100%; height:44px; font-size:16px; margin-top:4px;">
+          {% for d in dogs %}<option value="{{ d }}">{{ d|capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      <div style="display:flex; gap:16px; font-size:15px;">
+        <label><input type="checkbox" id="bt-pee"> &#128167; Pee</label>
+        <label><input type="checkbox" id="bt-poop"> &#128169; Poop</label>
+        <label><input type="checkbox" id="bt-inside"> Indoors &#127968;</label>
+      </div>
+      <label style="font-size:14px;">When</label>
+      <div style="display:flex; gap:8px;">
+        <input type="date" id="bt-date" style="flex:1; height:44px; font-size:16px;">
+        <input type="time" id="bt-time" style="flex:1; height:44px; font-size:16px;">
+      </div>
+      <button onclick="logBackdated(this)" style="height:50px; font-size:16px;">Log it</button>
+      <span class="flash" id="bt-flash"></span>
+    </div>
+  </div>
+
+  <h2>Recent entries</h2>
+  <div id="list">
+    {% if not events %}
+      <div class="empty">No entries in the last 7 days.</div>
+    {% endif %}
+    {% for e in events %}
+    <div class="ev" data-id="{{ e.id }}">
+      <div class="top">
+        <span class="who">{{ e.dog_disp }}</span>
+        <span class="when">{{ e.when }}</span>
+      </div>
+      <div class="what">
+        {% if e.pee == 'inside' %}&#128167;&#127968;{% elif e.pee == 'outside' %}&#128167;{% endif %}
+        {% if e.poop == 'inside' %}&#128169;&#127968;{% elif e.poop == 'outside' %}&#128169;{% endif %}
+        {% if not e.pee and not e.poop %}<span class="lbl">(no pee/poop)</span>{% endif %}
+      </div>
+      <textarea placeholder="Add a note (vomit, diarrhea, etc.)">{{ e.notes }}</textarea>
+      <div class="btns">
+        <button onclick="saveNote(this)">Save note</button>
+        <button class="del" onclick="delEvent(this)">Delete</button>
+        <span class="flash"></span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+<script>
+  (function initWhen(){
+    var d = document.getElementById('bt-date');
+    var t = document.getElementById('bt-time');
+    if (!d || !t) return;
+    var n = new Date();
+    var pad = function(x){ return String(x).padStart(2,'0'); };
+    d.value = n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
+    t.value = pad(n.getHours()) + ':' + pad(n.getMinutes());
+  })();
+
+  function logBackdated(btn) {
+    var dog = document.getElementById('bt-dog').value;
+    var pee = document.getElementById('bt-pee').checked;
+    var poop = document.getElementById('bt-poop').checked;
+    var inside = document.getElementById('bt-inside').checked;
+    var dateVal = document.getElementById('bt-date').value;
+    var timeVal = document.getElementById('bt-time').value;
+    var fl = document.getElementById('bt-flash');
+
+    if (!pee && !poop) { flash(fl, 'Pick pee and/or poop'); return; }
+    if (!dateVal || !timeVal) { flash(fl, 'Pick a date and time'); return; }
+
+    // Combine local date + time into a Date (local tz), then to epoch seconds.
+    var when = new Date(dateVal + 'T' + timeVal);
+    if (isNaN(when.getTime())) { flash(fl, 'Invalid date/time'); return; }
+
+    var loc = inside ? 'inside' : 'outside';
+    var payload = { dog: dog, timestamp: Math.floor(when.getTime()/1000) };
+    if (pee) payload.pee = loc;
+    if (poop) payload.poop = loc;
+
+    btn.disabled = true;
+    fetch('/api/log', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    }).then(function(r){
+      return r.json().then(function(d){ return {ok:r.ok, d:d}; });
+    }).then(function(res){
+      btn.disabled = false;
+      if (!res.ok) { flash(fl, res.d.error || 'Failed'); return; }
+      location.reload();
+    }).catch(function(){ btn.disabled=false; flash(fl, 'Failed'); });
+  }
+
+  function flash(el, msg) {
+    el.textContent = msg;
+    setTimeout(function(){ el.textContent=''; }, 2000);
+  }
+
+  function logAccident(dog, kind, btn) {
+    var payload = { dog: dog };
+    payload[kind] = 'inside';
+    btn.disabled = true;
+    fetch('/api/log', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    }).then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+      .then(function(){ location.reload(); })
+      .catch(function(){ btn.disabled=false; alert('Failed to log'); });
+  }
+
+  function saveNote(b) {
+    var ev = b.closest('.ev');
+    var id = ev.getAttribute('data-id');
+    var note = ev.querySelector('textarea').value;
+    var fl = ev.querySelector('.flash');
+    fetch('/api/event/' + id, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({notes: note})
+    }).then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+      .then(function(){ flash(fl, 'Saved'); })
+      .catch(function(){ flash(fl, 'Failed'); });
+  }
+
+  function delEvent(b) {
+    var ev = b.closest('.ev');
+    var id = ev.getAttribute('data-id');
+    if (!confirm('Delete this entry?')) return;
+    fetch('/api/event/' + id, { method:'DELETE' })
+      .then(function(r){ if(!r.ok) throw new Error(); return r.json(); })
+      .then(function(){ ev.parentNode.removeChild(ev); })
+      .catch(function(){ alert('Failed to delete'); });
+  }
+</script>
+</body>
+</html>

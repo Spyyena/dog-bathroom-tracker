@@ -1,0 +1,36 @@
+# Add this service block to the existing compose.yaml in your utilities LXC
+# (the same file that runs actual-budget). It does NOT replace that file —
+# paste the `dog-tracker:` service under the existing `services:` key.
+#
+# This service builds from local source (your code), so your nightly
+# `docker compose pull` cron will simply skip it — there's nothing to pull.
+# To update after you change the code:  docker compose up -d --build dog-tracker
+
+services:
+
+  dog-tracker:
+    container_name: dog-tracker
+    build: ./poop-tracker          # path to the folder holding the Dockerfile
+    ports:
+      - "5007:5007"
+    environment:
+      - TZ=America/Denver
+      # Header gate for /display. Generate a long random value and put the
+      # SAME value into TRMNL's screenshot plugin custom-header config.
+      # Leave empty to disable the gate (e.g. while testing).
+      - DISPLAY_TOKEN=${DISPLAY_TOKEN:-}
+      - DISPLAY_HEADER=X-Display-Token
+      - RETENTION_DAYS=7
+      - GROUP_WINDOW_SECONDS=300
+      - DISPLAY_ROWS=5
+    volumes:
+      # SQLite file lives on the LXC filesystem — survives restarts,
+      # hand-editable via `sqlite3 ./poop-tracker/data/log.db`.
+      - ./poop-tracker/data:/app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:5007/healthz').status==200 else 1)\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

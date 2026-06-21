@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Log a walk</title>
+<style>
+  :root { --line:#000; }
+  html, body { margin:0; padding:0; background:#fff; color:#000; }
+  body { font-family:Arial, Helvetica, sans-serif; padding:18px 16px;
+         max-width:480px; margin:0 auto; -webkit-text-size-adjust:100%; }
+  .head { display:flex; justify-content:space-between; align-items:baseline;
+          border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:18px; }
+  .head h1 { font-size:24px; margin:0; }
+  .head .now { font-size:14px; color:#555; }
+  .dog { margin-bottom:20px; }
+  .dog .name { font-size:22px; font-weight:bold; margin-bottom:8px; }
+  .row { display:flex; gap:12px; }
+  button.log {
+    flex:1; height:78px; border:2px solid var(--line); border-radius:12px;
+    background:#fff; color:#000; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; line-height:1.1; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  button.log .icon { font-size:30px; }
+  button.log .sub  { font-size:13px; color:#444; }
+  button.log:active { background:#eee; }
+  button.log.on { background:#000; color:#fff; }
+  button.log.on .sub { color:#fff; }
+  button.log.busy { opacity:0.5; }
+  .advanced {
+    width:100%; height:52px; font-size:18px; font-weight:bold;
+    border:2px solid var(--line); border-radius:12px; background:#fff; color:#000;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    margin-top:4px; text-decoration:none;
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Log a walk</h1>
+    <div class="now">{{ now_str }}</div>
+  </div>
+
+  {% for d in dogs %}
+  <div class="dog">
+    <div class="name">{{ d|capitalize }}</div>
+    <div class="row">
+      {% for kind, icon in [("pee","&#128167;"), ("poop","&#128169;")] %}
+      {% set st = states[d][kind] %}
+      <button class="log {% if st.state == 'undo' %}on{% endif %}"
+              data-dog="{{ d }}" data-kind="{{ kind }}">
+        <span class="icon">{{ icon|safe }}</span>
+        <span class="sub">
+          {%- if st.state == 'undo' -%}
+            logged {{ st.logged_at }}
+          {%- elif st.age -%}
+            {{ st.age }} ago
+          {%- else -%}
+            &mdash;
+          {%- endif -%}
+        </span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <a class="advanced" href="/advanced">Advanced</a>
+
+<script>
+  function applyState(btn, st) {
+    var sub = btn.querySelector('.sub');
+    if (st.state === 'undo') {
+      btn.classList.add('on');
+      sub.textContent = 'logged ' + st.logged_at;
+    } else {
+      btn.classList.remove('on');
+      if (st.age) { sub.textContent = st.age + ' ago'; }
+      else { sub.innerHTML = '&mdash;'; }
+    }
+  }
+
+  function toggle(btn) {
+    if (btn.classList.contains('busy')) return;
+    var dog = btn.getAttribute('data-dog');
+    var kind = btn.getAttribute('data-kind');
+    btn.classList.add('busy');
+
+    fetch('/api/toggle', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dog:dog, kind:kind})
+    }).then(function(r){
+      if (!r.ok) throw new Error('toggle failed');
+      return r.json();
+    }).then(function(data){
+      btn.classList.remove('busy');
+      applyState(btn, data.button);
+    }).catch(function(){
+      btn.classList.remove('busy');
+      btn.querySelector('.sub').textContent = 'tap to retry';
+    });
+  }
+
+  var buttons = document.querySelectorAll('button.log');
+  for (var i=0;i<buttons.length;i++){
+    buttons[i].addEventListener('click', function(){ toggle(this); });
+  }
+</script>
+</body>
+</html>
