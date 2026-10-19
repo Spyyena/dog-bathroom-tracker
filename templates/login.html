@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in</title>
+<style>
+  :root { --line:#000; }
+  html, body { margin:0; padding:0; background:#fff; color:#000; }
+  body { font-family:Arial, Helvetica, sans-serif; padding:40px 20px;
+         max-width:380px; margin:0 auto; -webkit-text-size-adjust:100%; }
+  h1 { font-size:26px; margin:0 0 4px; }
+  .sub { color:#555; font-size:14px; margin-bottom:24px; }
+  label { display:block; font-size:14px; margin:14px 0 6px; }
+  input[type=text], input[type=password] {
+    width:100%; box-sizing:border-box; height:50px; font-size:18px;
+    border:2px solid var(--line); border-radius:10px; padding:0 12px; }
+  button { width:100%; height:54px; margin-top:22px; font-size:18px; font-weight:bold;
+           border:2px solid var(--line); border-radius:12px; background:#000; color:#fff;
+           cursor:pointer; }
+  .err { background:#fde8e8; border:2px solid #b00000; color:#b00000; border-radius:10px;
+         padding:10px 12px; font-size:15px; margin-bottom:6px; }
+</style>
+</head>
+<body>
+  <h1>&#128062; Dog Walks</h1>
+  <div class="sub">Sign in once on this device. It stays signed in.</div>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/login">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label for="u">Name</label>
+    <input id="u" type="text" name="username" value="{{ username }}" required
+           autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false"
+           {% if not username %}autofocus{% endif %}>
+    <label for="p">Password</label>
+    <input id="p" type="password" name="password" required autocomplete="current-password"
+           {% if username %}autofocus{% endif %}>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>

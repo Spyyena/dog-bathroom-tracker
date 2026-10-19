@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Log a walk</title>
+<style>
+  :root { --line:#000; }
+  html, body { margin:0; padding:0; background:#fff; color:#000; }
+  body { font-family:Arial, Helvetica, sans-serif; padding:18px 16px;
+         max-width:480px; margin:0 auto; -webkit-text-size-adjust:100%; }
+  .head { display:flex; justify-content:space-between; align-items:baseline;
+          border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:18px; }
+  .head h1 { font-size:24px; margin:0; }
+  .head .now { font-size:14px; color:#555; }
+  .dog { margin-bottom:20px; }
+  .namerow { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .dog .name { font-size:22px; font-weight:bold; }
+  button.park {
+    height:40px; border:2px solid var(--line); border-radius:10px; background:#fff;
+    color:#000; cursor:pointer; display:flex; align-items:center; gap:6px;
+    padding:0 10px; -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  }
+  button.park .picon { font-size:18px; }
+  button.park .psub { font-size:12px; color:#444; }
+  button.park:active { background:#eee; }
+  button.park.on { background:#000; color:#fff; }
+  button.park.on .psub { color:#fff; }
+  button.park.busy { opacity:0.5; }
+  .row { display:flex; gap:12px; }
+  button.log {
+    flex:1; height:78px; border:2px solid var(--line); border-radius:12px;
+    background:#fff; color:#000; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:2px; line-height:1.1; -webkit-tap-highlight-color:transparent;
+    touch-action:manipulation;
+  }
+  button.log .icon { font-size:30px; }
+  button.log .sub  { font-size:13px; color:#444; }
+  button.log .parkline { font-size:11px; color:#666; }
+  button.log:active { background:#eee; }
+  button.log.on { background:#000; color:#fff; }
+  button.log.on .sub { color:#fff; }
+  button.log.on .parkline { color:#ccc; }
+  button.log.busy { opacity:0.5; }
+  button.log.removed, button.park.removed {
+    background:#b00000; color:#fff; border-color:#b00000;
+  }
+  button.log.removed .sub, button.park.removed .psub,
+  button.log.removed .parkline { color:#fff; font-weight:bold; }
+
+  /* bingo */
+  @keyframes bingo-fall { to { transform:translateY(110vh); } }
+  @keyframes bingo-spin { to { transform:rotate(360deg); } }
+  @keyframes bingo-zoom { from { transform:scale(0); opacity:0; }
+                          to   { transform:scale(1); opacity:1; } }
+  @keyframes bingo-wash { from { background-position:0% 50%; }
+                          to   { background-position:100% 50%; } }
+  @keyframes bingo-fade  { from { opacity:.9; } to { opacity:0; } }
+  @keyframes bingo-pop   { 0% { transform:scale(3); opacity:0; }
+                           60% { transform:scale(.92); opacity:1; }
+                           100% { transform:scale(1); opacity:1; } }
+  @keyframes bingo-veil  { from { opacity:0; } to { opacity:.88; } }
+  @keyframes bingo-shake { 0%,100% { transform:translate(0,0); }
+                           20% { transform:translate(-9px,5px); }
+                           40% { transform:translate(8px,-6px); }
+                           60% { transform:translate(-6px,-4px); }
+                           80% { transform:translate(5px,6px); } }
+  @keyframes bingo-rise  { from { transform:translateY(0); }
+                           to   { transform:translateY(-125vh); } }
+  @keyframes bingo-sway  { from { transform:translateX(-14px) rotate(-6deg); }
+                           to   { transform:translateX(14px) rotate(6deg); } }
+  .advanced {
+    width:100%; height:52px; font-size:18px; font-weight:bold;
+    border:2px solid var(--line); border-radius:12px; background:#fff; color:#000;
+    cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    margin-top:4px; text-decoration:none;
+  }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>Log a walk</h1>
+    <div class="now">{{ now_str }}</div>
+  </div>
+
+  {% for d in dogs %}
+  <div class="dog">
+    <div class="namerow">
+      <span class="name">{{ d|capitalize }}</span>
+      {% set pk = states[d]['park'] %}
+      <button class="park {% if pk.state == 'undo' %}on{% endif %}"
+              data-dog="{{ d }}" data-kind="park" title="Park / off-leash">
+        <span class="picon">&#127795;</span>
+        <span class="psub">
+          {%- if pk.state == 'undo' -%}{{ pk.logged_at }}
+          {%- elif pk.age -%}{{ pk.age }} ago
+          {%- else -%}&mdash;{%- endif -%}
+        </span>
+      </button>
+    </div>
+    <div class="row">
+      {% for kind, icon in [("pee","&#128167;"), ("poop","&#128169;")] %}
+      {% set st = states[d][kind] %}
+      <button class="log {% if st.state == 'undo' %}on{% endif %}"
+              data-dog="{{ d }}" data-kind="{{ kind }}">
+        <span class="icon">{{ icon|safe }}</span>
+        <span class="sub">
+          {%- if st.state == 'undo' -%}
+            logged {{ st.logged_at }}
+          {%- elif st.age -%}
+            {{ st.age }} ago
+          {%- else -%}
+            &mdash;
+          {%- endif -%}
+        </span>
+        <span class="parkline">
+          {%- if st.park_age -%}&#127795; {{ st.park_age }} ago{%- endif -%}
+        </span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <a class="advanced" href="/advanced">Advanced</a>
+
+<script>
+  // Signed out (cookie expired, revoked, or password changed)? Any 401 from the
+  // API sends this page to the login screen, which returns here afterwards.
+  (function(){
+    var f = window.fetch;
+    window.fetch = function(){
+      return f.apply(this, arguments).then(function(r){
+        if (r.status === 401) {
+          location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+        }
+        return r;
+      });
+    };
+  })();
+  var REMOVED_MS = 1500;   // how long an un-logged button shows "removed"
+  var POLL_MS = 60000;     // refresh state this often while the tab is visible
+  var reqGen = 0;          // latest-wins guard for overlapping state refreshes
+
+  function subEl(btn) {
+    return btn.querySelector('.sub') || btn.querySelector('.psub');
+  }
+
+  // Render one button from a state object (same shape /log renders from).
+  function renderButton(btn, st) {
+    var sub = subEl(btn);
+    var isPark = btn.classList.contains('park');
+    if (st.state === 'undo') {
+      btn.classList.add('on');
+      sub.textContent = isPark ? st.logged_at : ('logged ' + st.logged_at);
+    } else {
+      btn.classList.remove('on');
+      if (st.age) { sub.textContent = st.age + ' ago'; }
+      else { sub.innerHTML = '&mdash;'; }
+    }
+    // Park sub-line under pee/poop. The toggle response doesn't carry it, so
+    // only touch it when the state object actually includes park_age.
+    var pl = btn.querySelector('.parkline');
+    if (pl && ('park_age' in st)) {
+      pl.innerHTML = st.park_age ? '&#127795; ' + st.park_age + ' ago' : '';
+    }
+  }
+
+  // Pull fresh state for every dog and patch the page in place. Buttons that
+  // are mid-tap or showing "removed" are left alone.
+  function refreshState() {
+    var gen = ++reqGen;
+    fetch('/api/state', { cache: 'no-store' }).then(function(r){
+      if (!r.ok) throw new Error('state failed');
+      return r.json();
+    }).then(function(data){
+      if (gen !== reqGen) return;   // a newer refresh is in flight; drop this one
+      var now = document.querySelector('.head .now');
+      if (now && data.now_str) now.textContent = data.now_str;
+      var btns = document.querySelectorAll('button.log, button.park');
+      for (var i=0;i<btns.length;i++){
+        var b = btns[i];
+        if (b.classList.contains('busy') || b.classList.contains('removed')) continue;
+        var d = b.getAttribute('data-dog'), k = b.getAttribute('data-kind');
+        var st = data.states[d] && data.states[d][k];
+        if (st) renderButton(b, st);
+      }
+    }).catch(function(){ /* keep what's shown; next trigger retries */ });
+  }
+
+  function toggle(btn) {
+    if (btn.classList.contains('busy') || btn.classList.contains('removed')) return;
+    var dog = btn.getAttribute('data-dog');
+    var kind = btn.getAttribute('data-kind');
+    btn.classList.add('busy');
+
+    fetch('/api/toggle', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dog:dog, kind:kind})
+    }).then(function(r){
+      if (!r.ok) throw new Error('toggle failed');
+      return r.json();
+    }).then(function(data){
+      btn.classList.remove('busy');
+      if (data.action === 'removed') {
+        // Make an un-log impossible to miss (e.g. a stale-page double tap).
+        btn.classList.remove('on');
+        btn.classList.add('removed');
+        subEl(btn).textContent = 'removed';
+        setTimeout(function(){
+          btn.classList.remove('removed');
+          renderButton(btn, data.button);
+          refreshState();
+        }, REMOVED_MS);
+      } else {
+        renderButton(btn, data.button);
+      }
+      // Recompute everything else too (park sub-lines, ages) without a reload.
+      refreshState();
+      if (data.bingo) { playBingo(); }
+    }).catch(function(){
+      btn.classList.remove('busy');
+      subEl(btn).textContent = 'tap to retry';
+    });
+  }
+
+  var buttons = document.querySelectorAll('button.log, button.park');
+  for (var i=0;i<buttons.length;i++){
+    buttons[i].addEventListener('click', function(){ toggle(this); });
+  }
+
+  // Keep the page current however Safari brings it back: bfcache restore
+  // (pageshow), app/tab switch (visibilitychange), and a timer while visible.
+  window.addEventListener('pageshow', function(){ refreshState(); });
+  document.addEventListener('visibilitychange', function(){
+    if (document.visibilityState === 'visible') refreshState();
+  });
+  setInterval(function(){
+    if (document.visibilityState === 'visible') refreshState();
+  }, POLL_MS);
+
+  /* ================= BINGO ================= */
+  // All 3 dogs, both columns, one session: blackout bingo. One random effect,
+  // ~6 seconds, silent, self-cleaning. Server decides when (transition-only +
+  // cooldown); this just performs.
+
+  var BINGO_MS = 6000;
+  var EMOJI = ['\uD83D\uDCA7','\uD83D\uDCA9','\uD83C\uDF89','\uD83D\uDC15','\uD83E\uDDB4'];
+
+  function overlay() {
+    var o = document.createElement('div');
+    o.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden;';
+    document.body.appendChild(o);
+    setTimeout(function(){ o.remove(); }, BINGO_MS);
+    return o;
+  }
+
+  function banner(o, txt) {
+    var b = document.createElement('div');
+    b.textContent = txt || 'BINGO!';
+    b.style.cssText = 'position:absolute;top:38%;left:0;right:0;text-align:center;' +
+      'font:900 clamp(26px,12vw,64px) Arial;white-space:nowrap;color:#000;-webkit-text-stroke:2px #fff;' +
+      'animation:bingo-zoom 0.9s cubic-bezier(.2,1.6,.4,1) both;';
+    o.appendChild(b);
+  }
+
+  // Frame-rate independence: returns elapsed time as a multiple of a 60 Hz
+  // frame, so motion runs the same speed on 60/120/144 Hz screens.
+  // Capped so a backgrounded/stalled tab doesn't teleport things.
+  function ticker() {
+    var last = performance.now();
+    return function(){
+      var now = performance.now(), f = Math.min((now - last) / 16.667, 3);
+      last = now; return f;
+    };
+  }
+
+  // 1. Emoji rain
+  function fxRain() {
+    var o = overlay();
+    for (var i=0;i<70;i++){
+      var d = document.createElement('div');
+      d.textContent = EMOJI[i % EMOJI.length];
+      d.style.cssText = 'position:absolute;top:-40px;left:'+(Math.random()*100)+'%;' +
+        'font-size:'+(18+Math.random()*26)+'px;' +
+        'animation:bingo-fall '+(2+Math.random()*3)+'s linear '+(Math.random()*2.5)+'s both;';
+      o.appendChild(d);
+    }
+    banner(o);
+  }
+
+  // 2. Confetti
+  function fxConfetti() {
+    var o = overlay();
+    var colors = ['#e74c3c','#f1c40f','#2ecc71','#3498db','#9b59b6','#e67e22'];
+    for (var i=0;i<90;i++){
+      var d = document.createElement('div');
+      d.style.cssText = 'position:absolute;top:-20px;left:'+(Math.random()*100)+'%;' +
+        'width:10px;height:14px;background:'+colors[i%colors.length]+';' +
+        'transform:rotate('+(Math.random()*360)+'deg);' +
+        'animation:bingo-fall '+(2+Math.random()*3)+'s ease-in '+(Math.random()*2.5)+'s both,' +
+        'bingo-spin '+(0.5+Math.random())+'s linear infinite;';
+      o.appendChild(d);
+    }
+    banner(o);
+  }
+
+  // 3. Fireworks (canvas)
+  function fxFireworks() {
+    var o = overlay();
+    var cv = document.createElement('canvas');
+    cv.width = innerWidth; cv.height = innerHeight;
+    cv.style.cssText = 'position:absolute;inset:0;';
+    o.appendChild(cv);
+    var ctx = cv.getContext('2d'), parts = [], t0 = Date.now(), tick = ticker();
+    function burst(){
+      var x = 50 + Math.random()*(cv.width-100), y = 60 + Math.random()*(cv.height*0.5);
+      var hue = Math.random()*360;
+      for (var i=0;i<50;i++){
+        var a = Math.random()*6.283, v = 1.5+Math.random()*3.5;
+        parts.push({x:x,y:y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,hue:hue});
+      }
+    }
+    burst();
+    var iv = setInterval(burst, 700);
+    (function frame(){
+      if (Date.now()-t0 > BINGO_MS) { clearInterval(iv); return; }
+      var f = tick();
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(0,0,cv.width,cv.height);
+      parts = parts.filter(function(p){ return p.life > 0; });
+      parts.forEach(function(p){
+        p.x += p.vx*f; p.y += p.vy*f; p.vy += 0.045*f; p.life -= 0.014*f;
+        ctx.fillStyle = 'hsla('+p.hue+',90%,45%,'+p.life+')';
+        ctx.fillRect(p.x, p.y, 3, 3);
+      });
+      requestAnimationFrame(frame);
+    })();
+    banner(o);
+  }
+
+  // 4. Rainbow wash (translucent overlay — hue-rotate does nothing on a b/w page)
+  function fxRainbow() {
+    var o = overlay();
+    var w = document.createElement('div');
+    w.style.cssText = 'position:absolute;inset:0;opacity:0.35;' +
+      'background:linear-gradient(45deg,red,orange,yellow,green,blue,violet,red);' +
+      'background-size:400% 400%;animation:bingo-wash 1.6s linear infinite;';
+    o.appendChild(w);
+    banner(o, '\uD83C\uDF08 BINGO! \uD83C\uDF08');
+  }
+
+
+  // 6. Solitaire cascade — like the Windows win screen: one emoji at a time
+  // launches from the top and bounces its way OFF the side of the screen,
+  // leaving a trail. Horizontal speed scales with screen width so it takes a
+  // few bounces to cross on a phone or a desktop alike.
+  function fxSolitaire() {
+    var o = overlay();
+    var cv = document.createElement('canvas');
+    cv.width = innerWidth; cv.height = innerHeight;
+    cv.style.cssText = 'position:absolute;inset:0;';
+    o.appendChild(cv);
+    var ctx = cv.getContext('2d'), t0 = Date.now(), live = [], lastLaunch = -1000, k = 0;
+    var W = cv.width, H = cv.height, G = 0.25, tick = ticker();
+    ctx.font = '30px serif';
+    (function frame(){
+      var t = Date.now() - t0;
+      if (t > BINGO_MS) return;   // no clearRect: trails, like the solitaire win
+      if (t - lastLaunch > 620 && t < BINGO_MS - 1200) {
+        lastLaunch = t;
+        var x = W * (0.15 + Math.random() * 0.7);
+        var dir = x > W / 2 ? -1 : 1;             // head for the far side
+        live.push({ x: x, y: 40, vy: -2 + Math.random() * 3,
+                    vx: dir * (W / 170) * (0.75 + Math.random() * 0.5),
+                    c: EMOJI[k++ % EMOJI.length] });
+      }
+      var f = tick();
+      live.forEach(function(e){
+        e.vy += G*f; e.x += e.vx*f; e.y += e.vy*f;
+        if (e.y > H - 30) { e.y = H - 30; e.vy *= -0.8; }
+        ctx.fillText(e.c, e.x, e.y);
+      });
+      live = live.filter(function(e){ return e.x > -40 && e.x < W + 40; });
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  function centerBox(o, css) {
+    var c = document.createElement('div');
+    c.style.cssText = 'position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);' + css;
+    o.appendChild(c);
+    return c;
+  }
+
+
+  // 8. Slot machine — reels spin, land on three poops.
+  function fxSlots() {
+    var o = overlay();
+    var syms = ['\uD83D\uDCA7','\uD83D\uDCA9','\uD83C\uDF33','\uD83D\uDC15','\uD83E\uDDB4'];
+    var box = centerBox(o, 'background:#222;border:4px solid #d4a017;border-radius:14px;' +
+      'padding:12px;display:flex;gap:8px;');
+    var reels = [];
+    for (var i=0;i<3;i++){
+      var r = document.createElement('div');
+      r.style.cssText = 'width:64px;height:76px;background:#fff;border-radius:8px;' +
+        'display:flex;align-items:center;justify-content:center;font-size:44px;';
+      box.appendChild(r); reels.push(r);
+    }
+    reels.forEach(function(r, i){
+      var iv = setInterval(function(){ r.textContent = syms[Math.floor(Math.random()*syms.length)]; }, 70);
+      setTimeout(function(){
+        clearInterval(iv);
+        r.textContent = '\uD83D\uDCA9';
+        if (i === 2) setTimeout(function(){ banner(o, 'JACKPOT!'); }, 250);
+      }, 1500 + i * 800);
+    });
+  }
+
+  // White veil so paw prints show up against the black buttons.
+  function veil(o) {
+    var v = document.createElement('div');
+    v.style.cssText = 'position:absolute;inset:0;background:#fff;animation:bingo-veil .4s ease-out both;';
+    o.appendChild(v);
+  }
+
+  // Emoji dogs face left by default; flip when moving right.
+  function placeDog(el, x, y, movingRight) {
+    el.style.transform = 'translate(' + x + 'px,' + y + 'px)' + (movingRight ? ' scaleX(-1)' : '');
+  }
+
+  // 9. Zoomies — three dogs tearing across at different heights, alternating
+  // directions, leaving fading paw prints.
+  function fxZoomies() {
+    var o = overlay();
+    veil(o);
+    banner(o);
+    var W = innerWidth, H = innerHeight, t0 = Date.now();
+    var dogs = [0.22, 0.5, 0.78].map(function(h, i){
+      var el = document.createElement('div');
+      el.textContent = '\uD83D\uDC15';
+      el.style.cssText = 'position:absolute;left:0;top:0;font-size:44px;';
+      o.appendChild(el);
+      // ~0.42 px/ms: a phone crossing takes ~1.2 s; a wide monitor just takes longer.
+      var speed = 0.42 * (0.9 + Math.random() * 0.25);
+      return { el: el, base: h, delay: i * 380, pass: (W + 120) / speed,
+               startRight: i % 2 === 1, lastPaw: 0 };
+    });
+    (function frame(){
+      var t = Date.now() - t0;
+      if (t > BINGO_MS - 400) return;
+      dogs.forEach(function(d){
+        var tt = t - d.delay;
+        if (tt < 0) { d.el.style.transform = 'translate(-100px,-100px)'; return; }
+        var n = Math.floor(tt / d.pass), p = (tt % d.pass) / d.pass;
+        var right = (n % 2 === 0) !== d.startRight;
+        var x = right ? -60 + p * (W + 120) : W + 60 - p * (W + 120);
+        var y = H * d.base + Math.sin(p * (W + 120) / 80) * H * 0.05;   // wiggle per distance
+        placeDog(d.el, x, y, right);
+        if (t - d.lastPaw > 90) {
+          d.lastPaw = t;
+          var pw = document.createElement('div');
+          pw.textContent = '\uD83D\uDC3E';
+          pw.style.cssText = 'position:absolute;font-size:18px;left:' + (x + 12) + 'px;top:' +
+            (y + 32) + 'px;animation:bingo-fade 1.4s linear both;';
+          o.appendChild(pw);
+        }
+      });
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  // 13. Chase — a dog with a teddy bear, another dog hot on its tail. The
+  // chaser closes in; just before it catches up, the lead cuts the other way.
+  function fxChase() {
+    var o = overlay();
+    veil(o);
+    banner(o);
+    var W = innerWidth, H = innerHeight, t0 = Date.now();
+    function mk(txt, size){
+      var el = document.createElement('div');
+      el.textContent = txt;
+      el.style.cssText = 'position:absolute;left:0;top:0;font-size:' + size + 'px;';
+      o.appendChild(el); return el;
+    }
+    var chaserEl = mk('\uD83D\uDC15', 44), leadEl = mk('\uD83D\uDC15', 44), bear = mk('\uD83E\uDDF8', 26);
+    var L = { x: W * 0.2, y: H * 0.55, vx: 5.5, vy: -2.2 };
+    var hist = [], lag = 520, lastCut = 0, tick = ticker();
+    (function frame(){
+      var t = Date.now() - t0;
+      if (t > BINGO_MS - 300) return;
+      var f = tick();
+      L.x += L.vx*f; L.y += L.vy*f;
+      if (L.x < 10 || L.x > W - 54) { L.vx = -L.vx; L.x = Math.max(10, Math.min(W - 54, L.x)); }
+      if (L.y < H * 0.18 || L.y > H * 0.85) { L.vy = -L.vy; }
+      // chaser gains ground, then the lead juke-cuts and the gap resets
+      lag = Math.max(170, 520 - (t - lastCut) * 0.25);
+      if (lag <= 170 && t - lastCut > 900) {
+        L.vx = -L.vx; L.vy = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 2.5);
+        lastCut = t;
+      }
+      var right = L.vx > 0;
+      hist.push({ t: t, x: L.x, y: L.y, r: right });
+      while (hist.length > 2 && hist[1].t < t - 700) hist.shift();
+      placeDog(leadEl, L.x, L.y, right);
+      bear.style.transform = 'translate(' + (L.x + (right ? 34 : -10)) + 'px,' + (L.y + 14) + 'px)';
+      var c = hist[0];
+      for (var i = hist.length - 1; i >= 0; i--) { if (hist[i].t <= t - lag) { c = hist[i]; break; } }
+      placeDog(chaserEl, c.x, c.y, c.r);
+      requestAnimationFrame(frame);
+    })();
+  }
+
+  // 10. Stamp spree — several stamps slam down at random spots and angles,
+  // each with a random phrase and ink colour. The screen shakes on each hit.
+  var STAMP_TEXT = ['BINGO!', 'GOOD DOGS', 'PUPPY POWER', '\uD83D\uDCA9 CERTIFIED',
+    'PAWSOME', 'PAW-FECT', 'FUR-TASTIC', 'BARK-TACULAR', 'HOLY CRAP', 'TAIL WAGS',
+    'WHO\'S A GOOD BOY', 'RUFF WORK', 'TREAT EARNED'];
+  var STAMP_INK = ['#b00000', '#1646b5', '#12823b', '#7b2cbf', '#d9480f', '#0b7285', '#c2255c'];
+
+  function fxStamp() {
+    var o = overlay();
+    var W = innerWidth, H = innerHeight;
+    var pool = STAMP_TEXT.slice().sort(function(){ return Math.random() - 0.5; });
+    var count = 3;
+    for (var i = 0; i < count; i++) {
+      (function(i){
+        setTimeout(function(){
+          var txt = pool[i % pool.length];
+          var ink = STAMP_INK[Math.floor(Math.random() * STAMP_INK.length)];
+          var fs = Math.max(22, Math.min(60, (W * 0.8) / (txt.length * 0.66)));
+          // keep the whole (rotated) stamp on screen: centre at least half its width in
+          var half = Math.min(W * 0.46, fs * txt.length * 0.36 + 12);
+          var cx = half + Math.random() * Math.max(0, W - 2 * half);
+          var cy = H * (0.15 + Math.random() * 0.65);
+          var rot = -25 + Math.random() * 50;
+          var holder = document.createElement('div');
+          holder.style.cssText = 'position:absolute;left:' + cx + 'px;top:' + cy + 'px;' +
+            'transform:translate(-50%,-50%) rotate(' + rot + 'deg);';
+          var inner = document.createElement('div');
+          inner.textContent = txt;
+          inner.style.cssText = 'font:900 ' + fs + 'px Arial;color:' + ink + ';' +
+            'border:' + Math.max(3, fs / 11) + 'px solid ' + ink + ';border-radius:8px;' +
+            'padding:2px 12px;white-space:nowrap;background:rgba(255,255,255,.55);' +
+            'animation:bingo-pop .35s cubic-bezier(.2,1.4,.4,1) both;';
+          holder.appendChild(inner);
+          o.appendChild(holder);
+          setTimeout(function(){
+            document.body.style.animation = 'bingo-shake .35s linear';
+            setTimeout(function(){ document.body.style.animation = ''; }, 360);
+            for (var j = 0; j < 10; j++) {
+              var sp = document.createElement('div');
+              var a = Math.random() * 6.283, dist = fs * 1.2 + Math.random() * fs * 1.6, sz = 4 + Math.random() * 10;
+              sp.style.cssText = 'position:absolute;left:' + (cx + Math.cos(a) * dist) + 'px;top:' +
+                (cy + Math.sin(a) * dist * 0.6) + 'px;width:' + sz + 'px;height:' + sz + 'px;' +
+                'border-radius:50%;background:' + ink + ';opacity:.8;';
+              o.appendChild(sp);
+            }
+          }, 220);
+        }, 150 + i * 950);
+      })(i);
+    }
+  }
+
+  // 11. Balloons — float up with a gentle sway.
+  function fxBalloons() {
+    var o = overlay();
+    for (var i=0;i<28;i++){
+      var rise = document.createElement('div');
+      rise.style.cssText = 'position:absolute;bottom:-70px;left:' + (Math.random()*92) + '%;' +
+        'animation:bingo-rise ' + (3.2 + Math.random()*2.3) + 's ease-in ' + (Math.random()*1.6) + 's both;';
+      var b = document.createElement('div');
+      b.textContent = '\uD83C\uDF88';
+      b.style.cssText = 'font-size:' + (30 + Math.random()*22) + 'px;' +
+        'animation:bingo-sway ' + (0.9 + Math.random()*0.8) + 's ease-in-out infinite alternate;';
+      rise.appendChild(b);
+      o.appendChild(rise);
+    }
+    banner(o);
+  }
+
+  // 12. Tennis ball launcher — balls arc from the corners, a dog chases them.
+  function fxBalls() {
+    var o = overlay();
+    var cv = document.createElement('canvas');
+    cv.width = innerWidth; cv.height = innerHeight;
+    cv.style.cssText = 'position:absolute;inset:0;';
+    o.appendChild(cv);
+    var ctx = cv.getContext('2d'), t0 = Date.now(), balls = [], lastLaunch = -1000;
+    var dogX = cv.width / 2, groundY = cv.height - 20, dir = 1, tick = ticker();
+    // Drawn instead of the emoji: Android/Windows draw 🎾 as a racket.
+    function tennisBall(x, y, r, spin){
+      ctx.save(); ctx.translate(x, y); ctx.rotate(spin);
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283);
+      ctx.fillStyle = '#d8e62c'; ctx.fill();
+      ctx.lineWidth = 1.2; ctx.strokeStyle = '#9aa313'; ctx.stroke();
+      ctx.lineWidth = r * 0.16; ctx.strokeStyle = '#fff';
+      ctx.beginPath(); ctx.arc(-r * 1.25, 0, r * 0.95, -0.95, 0.95); ctx.stroke();
+      ctx.beginPath(); ctx.arc(r * 1.25, 0, r * 0.95, Math.PI - 0.95, Math.PI + 0.95); ctx.stroke();
+      ctx.restore();
+    }
+    (function frame(){
+      var t = Date.now() - t0;
+      if (t > BINGO_MS) return;
+      var f = tick();
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      if (t - lastLaunch > 420 && t < BINGO_MS - 1500) {
+        lastLaunch = t;
+        var left = Math.random() < 0.5;
+        balls.push({ x: left ? 10 : cv.width - 10, y: cv.height - 30,
+                     vx: (left ? 1 : -1) * (3 + Math.random() * 4), vy: -(11 + Math.random() * 6) });
+      }
+      balls.forEach(function(b){
+        b.vy += 0.35*f; b.x += b.vx*f; b.y += b.vy*f;
+        tennisBall(b.x, b.y, 12, t / 120 * (b.vx > 0 ? 1 : -1));
+      });
+      balls = balls.filter(function(b){ return b.y < cv.height + 40; });
+      var target = balls.length ? balls[balls.length - 1].x : cv.width / 2;
+      var step = Math.max(-6, Math.min(6, target - dogX));
+      dogX += step * f; if (Math.abs(step) > 0.5) dir = step > 0 ? 1 : -1;
+      var hop = Math.abs(Math.sin(t / 110)) * 36;
+      ctx.save();
+      ctx.font = '42px serif';
+      ctx.translate(dogX, groundY - hop);
+      if (dir > 0) ctx.scale(-1, 1);   // emoji faces left by default
+      ctx.fillText('\uD83D\uDC15', -21, 0);
+      ctx.restore();
+      requestAnimationFrame(frame);
+    })();
+    banner(o);
+  }
+
+  function playBingo() {
+    var fx = [fxRain, fxConfetti, fxFireworks, fxRainbow, fxSolitaire,
+              fxSlots, fxZoomies, fxChase, fxStamp, fxBalloons, fxBalls];
+    fx[Math.floor(Math.random()*fx.length)]();
+  }
+
+</script>
+</body>
+</html>

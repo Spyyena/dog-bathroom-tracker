@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History</title>
+<style>
+  :root { --line:#000; }
+  html, body { margin:0; padding:0; background:#fff; color:#000; }
+  body { font-family:Arial, Helvetica, sans-serif; padding:18px 16px;
+         max-width:640px; margin:0 auto; -webkit-text-size-adjust:100%; }
+  .head { display:flex; justify-content:space-between; align-items:baseline;
+          border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:14px; }
+  .head h1 { font-size:24px; margin:0; }
+  .head a { font-size:15px; color:#000; }
+
+  form.filters { border:2px solid var(--line); border-radius:12px; padding:12px; margin-bottom:16px; }
+  form.filters .grid { display:flex; flex-wrap:wrap; gap:10px; }
+  form.filters label { font-size:13px; display:flex; flex-direction:column; gap:3px; }
+  form.filters select, form.filters input[type=date], form.filters input[type=text] {
+    height:40px; font-size:15px; border:1px solid #bbb; border-radius:8px; padding:4px 8px;
+    box-sizing:border-box;
+  }
+  form.filters input[type=text] { min-width:150px; }
+  form.filters .row2 { display:flex; align-items:center; gap:14px; margin-top:10px; flex-wrap:wrap; }
+  form.filters .chk { font-size:14px; display:flex; align-items:center; gap:5px; }
+  form.filters button {
+    height:42px; padding:0 18px; font-size:15px; font-weight:bold;
+    border:2px solid var(--line); border-radius:8px; background:#fff; cursor:pointer;
+  }
+  form.filters a.clear { font-size:13px; color:#555; align-self:center; }
+
+  .graph { border:1px solid #bbb; border-radius:10px; padding:8px; margin-bottom:16px; overflow-x:auto; }
+  .graph img, .graph svg { display:block; max-width:100%; }
+  .graph .hint { font-size:12px; color:#777; padding:6px; }
+
+  .count { font-size:13px; color:#555; margin-bottom:8px; }
+
+  .ev { border:1px solid #ccc; border-radius:9px; padding:8px 11px; margin-bottom:8px; }
+  .ev.note { border-left:4px solid #000; }
+  .ev .top { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .ev .who { font-size:16px; font-weight:bold; }
+  .ev .when { font-size:12px; color:#555; }
+  .ev .what { font-size:19px; margin:3px 0 0; }
+  .ev .what .lbl { font-size:12px; color:#555; }
+  .ev .note-text { font-size:14px; margin-top:4px; white-space:pre-wrap; }
+  .empty { color:#666; font-size:15px; padding:14px 0; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <h1>History</h1>
+    <span><a href="/advanced">Advanced</a> &nbsp; <a href="/log">&larr; Log</a></span>
+  </div>
+
+  <form class="filters" method="get" action="/history">
+    <div class="grid">
+      <label>Dog
+        <select name="dog">
+          <option value="">Any</option>
+          {% for d in dogs %}
+          <option value="{{ d }}" {% if sel_dog == d %}selected{% endif %}>{{ d|capitalize }}</option>
+          {% endfor %}
+          <option value="all" {% if sel_dog == 'all' %}selected{% endif %}>Household notes</option>
+        </select>
+      </label>
+      <label>Type
+        <select name="kind">
+          <option value="">Any</option>
+          <option value="pee"  {% if sel_kind == 'pee' %}selected{% endif %}>Pee</option>
+          <option value="poop" {% if sel_kind == 'poop' %}selected{% endif %}>Poop</option>
+          <option value="park" {% if sel_kind == 'park' %}selected{% endif %}>Park</option>
+        </select>
+      </label>
+      <label>From
+        <input type="date" name="start" value="{{ sel_start or default_start }}">
+      </label>
+      <label>To
+        <input type="date" name="end" value="{{ sel_end or default_end }}">
+      </label>
+      <label>Search notes
+        <input type="text" name="q" value="{{ sel_q }}" placeholder="e.g. gland, food">
+      </label>
+    </div>
+    <div class="row2">
+      <label class="chk"><input type="checkbox" name="notes_only" value="1"
+        {% if sel_notes_only %}checked{% endif %}> Notes only</label>
+      <button type="submit">Apply</button>
+      <a class="clear" href="/history">Clear</a>
+    </div>
+  </form>
+
+  {% if graph_ready %}
+  <div class="graph">
+    <img src="/history/graph.svg?{{ graph_qs }}" alt="frequency graph">
+  </div>
+  {% else %}
+  <div class="graph"><div class="hint">
+    Pick a single dog and a single type (and optionally a date range) to see a per-day frequency graph.
+  </div></div>
+  {% endif %}
+
+  <div class="count">{{ count }} event{{ '' if count == 1 else 's' }}{% if count >= 500 %} (showing most recent 500){% endif %}</div>
+
+  {% if not items %}
+    <div class="empty">No matching entries.</div>
+  {% endif %}
+  {% for e in items %}
+  <div class="ev {% if e.note_only %}note{% endif %}">
+    <div class="top">
+      <span class="who">{{ e.dog_disp }}</span>
+      <span class="when">{{ e.when }}</span>
+    </div>
+    <div class="what">
+      {% if e.pee == 'inside' %}&#128167;&#127968;{% elif e.pee == 'outside' %}&#128167;{% endif %}
+      {% if e.poop == 'inside' %}&#128169;&#127968;{% elif e.poop == 'outside' %}&#128169;{% endif %}
+      {% if e.park %}&#127795;{% endif %}
+      {% if e.note_only %}<span class="lbl">&#128221; Note</span>{% endif %}
+    </div>
+    {% if e.notes %}<div class="note-text">{{ e.notes }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</body>
+</html>

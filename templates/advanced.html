@@ -2,6 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Advanced</title>
 <style>
@@ -13,6 +16,10 @@
           border-bottom:2px solid var(--line); padding-bottom:10px; margin-bottom:16px; }
   .head h1 { font-size:24px; margin:0; }
   .head a { font-size:15px; color:#000; }
+  .who-bar { font-size:13px; color:#555; margin:-8px 0 14px; display:flex;
+             justify-content:flex-end; align-items:center; gap:10px; }
+  .linkbtn { background:none; border:none; padding:0; color:#900; font-size:13px;
+             text-decoration:underline; cursor:pointer; font-family:inherit; }
   h2 { font-size:17px; margin:18px 0 8px; }
 
   /* accident logger */
@@ -51,7 +58,40 @@
 <body>
   <div class="head">
     <h1>Advanced</h1>
-    <a href="/log">&larr; Back to log</a>
+    <span><a href="/history">History</a> &nbsp; <a href="/log">&larr; Log</a></span>
+  </div>
+  {% if auth and user %}
+  <div class="who-bar">
+    Signed in as <b>{{ user|capitalize }}</b>
+    <form method="post" action="/logout" style="display:inline;margin:0;"
+          onsubmit="return confirm('Sign out on this device?');">
+      <button type="submit" class="linkbtn">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+
+  <div class="acc">
+    <h2 style="margin-top:0;">Add a note</h2>
+    <div style="font-size:12px;color:#666;margin-bottom:8px;">
+      Standalone journal note — food changes, gland expression, vet visits.
+      Not tied to a pee/poop. Pick a dog or "All dogs."
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <select id="nt-dog" style="height:44px; font-size:16px;">
+        {% for d in dogs %}<option value="{{ d }}">{{ d|capitalize }}</option>{% endfor %}
+        <option value="all">Household (all dogs)</option>
+      </select>
+      <textarea id="nt-text" placeholder="e.g. Switched to 50/50 new food; Crystal gland expressed"
+        style="width:100%;box-sizing:border-box;font-family:inherit;font-size:15px;
+               border:1px solid #bbb;border-radius:8px;padding:8px;min-height:60px;resize:vertical;"></textarea>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="font-size:13px;"><input type="checkbox" id="nt-bt"> Backdate</label>
+        <input type="date" id="nt-date" style="height:40px;font-size:15px;display:none;">
+        <input type="time" id="nt-time" style="height:40px;font-size:15px;display:none;">
+      </div>
+      <button onclick="addNote(this)" style="height:50px;font-size:16px;">Save note</button>
+      <span class="flash" id="nt-flash"></span>
+    </div>
   </div>
 
   <div class="acc">
@@ -76,9 +116,10 @@
           {% for d in dogs %}<option value="{{ d }}">{{ d|capitalize }}</option>{% endfor %}
         </select>
       </label>
-      <div style="display:flex; gap:16px; font-size:15px;">
+      <div style="display:flex; gap:16px; font-size:15px; flex-wrap:wrap;">
         <label><input type="checkbox" id="bt-pee"> &#128167; Pee</label>
         <label><input type="checkbox" id="bt-poop"> &#128169; Poop</label>
+        <label><input type="checkbox" id="bt-park"> &#127795; Park</label>
         <label><input type="checkbox" id="bt-inside"> Indoors &#127968;</label>
       </div>
       <label style="font-size:14px;">When</label>
@@ -105,7 +146,8 @@
       <div class="what">
         {% if e.pee == 'inside' %}&#128167;&#127968;{% elif e.pee == 'outside' %}&#128167;{% endif %}
         {% if e.poop == 'inside' %}&#128169;&#127968;{% elif e.poop == 'outside' %}&#128169;{% endif %}
-        {% if not e.pee and not e.poop %}<span class="lbl">(no pee/poop)</span>{% endif %}
+        {% if e.park %}&#127795;{% endif %}
+        {% if e.note_only %}<span class="lbl">&#128221; Note</span>{% endif %}
       </div>
       <textarea placeholder="Add a note (vomit, diarrhea, etc.)">{{ e.notes }}</textarea>
       <div class="btns">
@@ -118,26 +160,51 @@
   </div>
 
 <script>
+  // Signed out (cookie expired, revoked, or password changed)? Any 401 from the
+  // API sends this page to the login screen, which returns here afterwards.
+  (function(){
+    var f = window.fetch;
+    window.fetch = function(){
+      return f.apply(this, arguments).then(function(r){
+        if (r.status === 401) {
+          location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
+        }
+        return r;
+      });
+    };
+  })();
   (function initWhen(){
     var d = document.getElementById('bt-date');
     var t = document.getElementById('bt-time');
     if (!d || !t) return;
-    var n = new Date();
     var pad = function(x){ return String(x).padStart(2,'0'); };
-    d.value = n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
-    t.value = pad(n.getHours()) + ':' + pad(n.getMinutes());
+    // If we just logged a backdated entry, the "Log it" handler stashed the
+    // entered time and reloaded (so the list below refreshes and can be noted).
+    // Restore that time so successive backdated entries keep it. A genuine fresh
+    // navigation has no stash -> default to now. The stash is consumed once.
+    var stash = null;
+    try { stash = sessionStorage.getItem('bt_last'); sessionStorage.removeItem('bt_last'); } catch(e){}
+    if (stash) {
+      var parts = stash.split('T');
+      d.value = parts[0]; t.value = parts[1] || '';
+    } else {
+      var n = new Date();
+      d.value = n.getFullYear() + '-' + pad(n.getMonth()+1) + '-' + pad(n.getDate());
+      t.value = pad(n.getHours()) + ':' + pad(n.getMinutes());
+    }
   })();
 
   function logBackdated(btn) {
     var dog = document.getElementById('bt-dog').value;
     var pee = document.getElementById('bt-pee').checked;
     var poop = document.getElementById('bt-poop').checked;
+    var park = document.getElementById('bt-park').checked;
     var inside = document.getElementById('bt-inside').checked;
     var dateVal = document.getElementById('bt-date').value;
     var timeVal = document.getElementById('bt-time').value;
     var fl = document.getElementById('bt-flash');
 
-    if (!pee && !poop) { flash(fl, 'Pick pee and/or poop'); return; }
+    if (!pee && !poop && !park) { flash(fl, 'Pick pee, poop, or park'); return; }
     if (!dateVal || !timeVal) { flash(fl, 'Pick a date and time'); return; }
 
     // Combine local date + time into a Date (local tz), then to epoch seconds.
@@ -148,6 +215,7 @@
     var payload = { dog: dog, timestamp: Math.floor(when.getTime()/1000) };
     if (pee) payload.pee = loc;
     if (poop) payload.poop = loc;
+    if (park) payload.park = true;
 
     btn.disabled = true;
     fetch('/api/log', {
@@ -158,6 +226,8 @@
     }).then(function(res){
       btn.disabled = false;
       if (!res.ok) { flash(fl, res.d.error || 'Failed'); return; }
+      // Keep this backdate time through the reload so the next entry reuses it.
+      try { sessionStorage.setItem('bt_last', dateVal + 'T' + timeVal); } catch(e){}
       location.reload();
     }).catch(function(){ btn.disabled=false; flash(fl, 'Failed'); });
   }
@@ -165,6 +235,48 @@
   function flash(el, msg) {
     el.textContent = msg;
     setTimeout(function(){ el.textContent=''; }, 2000);
+  }
+
+  // note backdate toggle
+  (function(){
+    var cb = document.getElementById('nt-bt');
+    if (!cb) return;
+    cb.addEventListener('change', function(){
+      var d = document.getElementById('nt-date'), t = document.getElementById('nt-time');
+      var show = cb.checked ? 'inline-block' : 'none';
+      d.style.display = show; t.style.display = show;
+      if (cb.checked && !d.value) {
+        var n = new Date(), p = function(x){ return String(x).padStart(2,'0'); };
+        d.value = n.getFullYear()+'-'+p(n.getMonth()+1)+'-'+p(n.getDate());
+        t.value = p(n.getHours())+':'+p(n.getMinutes());
+      }
+    });
+  })();
+
+  function addNote(btn) {
+    var dog = document.getElementById('nt-dog').value;
+    var text = document.getElementById('nt-text').value.trim();
+    var fl = document.getElementById('nt-flash');
+    if (!text) { flash(fl, 'Enter some text'); return; }
+    var payload = { dog: dog, notes: text };
+    if (document.getElementById('nt-bt').checked) {
+      var dv = document.getElementById('nt-date').value;
+      var tv = document.getElementById('nt-time').value;
+      if (dv && tv) {
+        var when = new Date(dv + 'T' + tv);
+        if (!isNaN(when.getTime())) payload.timestamp = Math.floor(when.getTime()/1000);
+      }
+    }
+    btn.disabled = true;
+    fetch('/api/note', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+      .then(function(res){
+        btn.disabled = false;
+        if (!res.ok) { flash(fl, res.d.error || 'Failed'); return; }
+        location.reload();
+      }).catch(function(){ btn.disabled=false; flash(fl, 'Failed'); });
   }
 
   function logAccident(dog, kind, btn) {

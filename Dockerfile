@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 COPY templates ./templates
+COPY static ./static
 
 # Data dir is bind-mounted from the host; created here so it exists even
 # if the mount is absent (e.g. local testing).
